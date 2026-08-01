@@ -1,0 +1,713 @@
+// =============================================================================
+// ZIMRA FDMS-Compliant POS/ERP Platform — Prisma Schema
+// PostgreSQL · Prisma ORM
+// =============================================================================
+// Domain hierarchy:
+//   Tenant → Devices → FiscalDays → Sales → SaleItems
+//                    ↘ OfflineSyncQueue
+//   Tenant → Users
+//   Tenant → Products → HsCodes
+//   Tenant → CurrencyRates
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, uuid_ossp]
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserRole {
+  SUPER_ADMIN   // Platform-level Anthropic/operator admin
+  TENANT_ADMIN  // Business owner / manager
+  CASHIER       // Point-of-sale operator
+  ACCOUNTANT    // Read-only financial reports
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INVITED // Email sent but not yet accepted
+}
+
+enum DeviceStatus {
+  PENDING_ACTIVATION  // Created in our system, not yet registered with ZIMRA
+  ACTIVE              // Registered & certified with ZIMRA
+  SUSPENDED           // ZIMRA or tenant-suspended
+  DECOMMISSIONED      // Permanently removed from service
+}
+
+enum Currency {
+  USD // United States Dollar
+  ZIG // Zimbabwe Gold (ZiG) — successor to ZWL
+}
+
+enum PaymentMethod {
+  CASH_USD
+  CASH_ZIG
+  ECOCASH_USD
+  ECOCASH_ZIG
+  INNBUCKS_USD
+  INNBUCKS_ZIG
+  SWIPE_USD    // POS card swipe (USD)
+  SWIPE_ZIG
+  RTGS_USD
+  RTGS_ZIG
+  BANK_TRANSFER_USD
+  BANK_TRANSFER_ZIG
+  CREDIT       // Store credit / account sale
+}
+
+enum SaleStatus {
+  DRAFT             // Not yet finalised (e.g., items being added)
+  COMPLETED         // Payment received, receipt generated
+  VOIDED            // Cancelled before fiscal submission
+  FISCALLY_ACCEPTED // ZIMRA returned receiptCounter & signature
+  FISCALLY_REJECTED // ZIMRA rejected the receipt submission
+  SYNC_PENDING      // Queued for offline sync
+}
+
+enum ReceiptType {
+  FISCAL_INVOICE    // Standard taxable sale
+  FISCAL_CREDIT_NOTE // Refund / reversal
+  FISCAL_DEBIT_NOTE
+  NON_FISCAL        // Below ZIMRA threshold or exempt
+}
+
+enum TaxCategory {
+  CATEGORY_A  // Standard rate 15% VAT
+  CATEGORY_B  // Zero-rated (exports, basic commodities)
+  CATEGORY_C  // Exempt (financial services, etc.)
+  CATEGORY_D  // Tourism levy
+  CATEGORY_E  // Specific excise
+}
+
+enum FiscalDayStatus {
+  OPEN              // OpenDay submitted, ZIMRA acknowledged
+  CLOSE_INITIATED   // CloseDay request sent, awaiting ZIMRA
+  CLOSED            // ZIMRA confirmed day closure (Z-Report generated)
+  FORCE_CLOSED      // Closed locally due to offline — pending ZIMRA sync
+}
+
+enum SyncQueueStatus {
+  PENDING    // Waiting to be sent
+  IN_FLIGHT  // Currently being transmitted
+  SUCCEEDED  // ZIMRA accepted
+  FAILED     // Permanent failure after max retries
+  RETRYING   // Scheduled for next retry
+}
+
+enum SyncOperationType {
+  OPEN_DAY
+  SUBMIT_RECEIPT
+  CLOSE_DAY
+  REGISTER_DEVICE
+}
+
+enum ProductType {
+  GOODS   // Physical inventory item
+  SERVICE // Labour / non-stock item
+}
+
+// =============================================================================
+// TENANT (multi-tenancy root)
+// =============================================================================
+
+model Tenant {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Business identity
+  businessName    String  @map("business_name") @db.VarChar(255)
+  tradingName     String? @map("trading_name") @db.VarChar(255)
+  registrationNo  String  @map("registration_no") @db.VarChar(100)  // ZIMRA BP number or Companies Act reg
+  vatNumber       String? @unique @map("vat_number") @db.VarChar(50) // ZIMRA VAT registration
+  tinNumber       String  @unique @map("tin_number") @db.VarChar(20) // Tax Identification Number
+
+  // Contact
+  email       String  @db.VarChar(255)
+  phone       String? @db.VarChar(30)
+  address     String  @db.VarChar(500)
+  city        String  @db.VarChar(100)
+  country     String  @default("ZW") @db.VarChar(2)
+
+  // Business configuration
+  defaultCurrency Currency @default(USD) @map("default_currency")
+  fiscalYear      Int      @default(1)   @map("fiscal_year_start_month") // 1 = January
+  logoUrl         String?  @map("logo_url") @db.VarChar(1024)
+
+  // Subscription / platform
+  isActive    Boolean  @default(true)  @map("is_active")
+  planTier    String   @default("starter") @map("plan_tier") @db.VarChar(50)
+  trialEndsAt DateTime? @map("trial_ends_at")
+
+  // Relations
+  users          User[]
+  devices        Device[]
+  products       Product[]
+  hsCodes        HsCode[]
+  sales          Sale[]
+  currencyRates  CurrencyRate[]
+  fiscalDays     FiscalDay[]
+  syncQueue      OfflineSyncQueue[]
+
+  @@map("tenants")
+}
+
+// =============================================================================
+// USER
+// =============================================================================
+
+model User {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  email        String     @db.VarChar(255)
+  passwordHash String     @map("password_hash") @db.VarChar(255) // bcrypt
+  firstName    String     @map("first_name") @db.VarChar(100)
+  lastName     String     @map("last_name") @db.VarChar(100)
+  role         UserRole   @default(CASHIER)
+  status       UserStatus @default(INVITED)
+  pin          String?    @db.VarChar(8)  // Hashed 4-6 digit POS PIN for cashier fast-login
+
+  // Audit
+  lastLoginAt    DateTime? @map("last_login_at")
+  lastLoginIp    String?   @map("last_login_ip") @db.VarChar(45)
+  emailVerifiedAt DateTime? @map("email_verified_at")
+
+  // Relations
+  sales        Sale[]        @relation("CashierSales")
+  openedDays   FiscalDay[]   @relation("DayOpener")
+  closedDays   FiscalDay[]   @relation("DayCloser")
+
+  @@unique([tenantId, email])
+  @@index([tenantId, role])
+  @@map("users")
+}
+
+// =============================================================================
+// DEVICE (ZIMRA Virtual Fiscal Device)
+// =============================================================================
+
+model Device {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // ZIMRA device identity
+  deviceId        String  @unique @map("device_id") @db.VarChar(50)  // ZIMRA-assigned device serial
+  deviceName      String  @map("device_name") @db.VarChar(100)        // Human-readable label (e.g., "Till 1")
+  deviceModelName String  @default("Virtual") @map("device_model_name") @db.VarChar(100)
+  status          DeviceStatus @default(PENDING_ACTIVATION)
+
+  // Cryptographic material (stored encrypted at rest — use app-level AES-256-GCM)
+  privateKeyPem    String? @map("private_key_pem")   @db.Text  // RSA-2048 private key (encrypted)
+  publicKeyPem     String? @map("public_key_pem")    @db.Text  // RSA-2048 public key
+  csrPem           String? @map("csr_pem")           @db.Text  // PKCS#10 CSR sent to ZIMRA
+  certificatePem   String? @map("certificate_pem")   @db.Text  // x.509 cert from ZIMRA
+  certificateThumb String? @map("certificate_thumb") @db.VarChar(64) // SHA-256 fingerprint hex
+  certIssuedAt     DateTime? @map("cert_issued_at")
+  certExpiresAt    DateTime? @map("cert_expires_at")
+
+  // ZIMRA activation tokens
+  activationKey    String? @map("activation_key") @db.VarChar(255)  // Initial registration token
+  integrationKey   String? @map("integration_key") @db.VarChar(255) // Bearer token post-cert
+
+  // Fiscal counters (ZIMRA requires monotonically increasing)
+  lastReceiptCounter   Int @default(0) @map("last_receipt_counter")
+  lastReceiptGlobalNo  Int @default(0) @map("last_receipt_global_no")
+  lastFiscalDayNo      Int @default(0) @map("last_fiscal_day_no")
+
+  // Location / branch metadata
+  branchName    String? @map("branch_name") @db.VarChar(100)
+  branchAddress String? @map("branch_address") @db.VarChar(500)
+
+  // Relations
+  fiscalDays FiscalDay[]
+  sales      Sale[]
+  syncQueue  OfflineSyncQueue[]
+
+  @@index([tenantId, status])
+  @@map("devices")
+}
+
+// =============================================================================
+// HS CODE (Harmonised System — required for ZIMRA line items)
+// =============================================================================
+
+model HsCode {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  code        String      @db.VarChar(20)   // e.g., "8471.30" — Computer equipment
+  description String      @db.VarChar(500)
+  taxCategory TaxCategory @map("tax_category")
+  vatRate     Decimal     @map("vat_rate") @db.Decimal(5, 4) // e.g., 0.1500 = 15%
+
+  products Product[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("hs_codes")
+}
+
+// =============================================================================
+// PRODUCT
+// =============================================================================
+
+model Product {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  hsCodeId String? @map("hs_code_id") @db.Uuid
+  hsCode   HsCode? @relation(fields: [hsCodeId], references: [id])
+
+  // Identifiers
+  sku          String  @db.VarChar(100)
+  barcode      String? @db.VarChar(100)
+  name         String  @db.VarChar(255)
+  description  String? @db.Text
+  productType  ProductType @default(GOODS) @map("product_type")
+
+  // Pricing (always stored in USD — converted at sale time)
+  priceUsd     Decimal  @map("price_usd") @db.Decimal(18, 6)
+  costUsd      Decimal? @map("cost_usd") @db.Decimal(18, 6)
+  taxCategory  TaxCategory @map("tax_category")
+  vatRate      Decimal  @map("vat_rate") @db.Decimal(5, 4)  // e.g., 0.1500
+
+  // Inventory (optional — for stock-tracked items)
+  trackInventory  Boolean @default(false) @map("track_inventory")
+  stockQuantity   Decimal @default(0) @map("stock_quantity") @db.Decimal(18, 4)
+  lowStockAlert   Decimal? @map("low_stock_alert") @db.Decimal(18, 4)
+  unit            String  @default("each") @db.VarChar(50) // "kg", "litre", "each", "box"
+
+  isActive Boolean @default(true) @map("is_active")
+
+  saleItems SaleItem[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, isActive])
+  @@index([tenantId, barcode])
+  @@map("products")
+}
+
+// =============================================================================
+// CURRENCY RATE (daily exchange rate log)
+// =============================================================================
+
+model CurrencyRate {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  rateDate       DateTime @map("rate_date") @db.Date  // Date this rate applies
+  fromCurrency   Currency @map("from_currency")
+  toCurrency     Currency @map("to_currency")
+
+  // Rate set at start of fiscal day (ZiG per 1 USD)
+  rate           Decimal  @db.Decimal(18, 6)  // e.g., 27.500000 ZiG per USD
+  rateSource     String   @default("MANUAL") @map("rate_source") @db.VarChar(50) // "RBZ_INTERBANK" | "MANUAL"
+  setByUserId    String?  @map("set_by_user_id") @db.Uuid
+
+  // ZIMRA requires the official RBZ rate used on fiscal day
+  rbzReference   String?  @map("rbz_reference") @db.VarChar(100)
+
+  @@unique([tenantId, rateDate, fromCurrency, toCurrency])
+  @@index([tenantId, rateDate])
+  @@map("currency_rates")
+}
+
+// =============================================================================
+// FISCAL DAY
+// =============================================================================
+
+model FiscalDay {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  deviceId String @map("device_id") @db.Uuid
+  device   Device @relation(fields: [deviceId], references: [id])
+
+  openedById String? @map("opened_by_id") @db.Uuid
+  openedBy   User?   @relation("DayOpener", fields: [openedById], references: [id])
+
+  closedById String? @map("closed_by_id") @db.Uuid
+  closedBy   User?   @relation("DayCloser", fields: [closedById], references: [id])
+
+  // ZIMRA fiscal day identity
+  fiscalDayNo      Int      @map("fiscal_day_no")    // Monotonic counter from ZIMRA
+  fiscalDayDate    DateTime @map("fiscal_day_date") @db.Date
+  status           FiscalDayStatus @default(OPEN)
+
+  // OpenDay ZIMRA response
+  openedAt         DateTime? @map("opened_at")
+  zimraOpenToken   String?   @map("zimra_open_token") @db.VarChar(255)  // ZIMRA ack token
+
+  // CloseDay data (Z-Report totals, submitted to ZIMRA)
+  closedAt              DateTime? @map("closed_at")
+  closeInitiatedAt      DateTime? @map("close_initiated_at")
+  zimraCloseToken       String?   @map("zimra_close_token") @db.VarChar(255)
+
+  // Z-Report totals (aggregated at close)
+  totalReceiptsCount    Int     @default(0) @map("total_receipts_count")
+  totalSalesUsd         Decimal @default(0) @map("total_sales_usd") @db.Decimal(18, 4)
+  totalSalesZig         Decimal @default(0) @map("total_sales_zig") @db.Decimal(18, 4)
+  totalVatUsd           Decimal @default(0) @map("total_vat_usd") @db.Decimal(18, 4)
+  totalVatZig           Decimal @default(0) @map("total_vat_zig") @db.Decimal(18, 4)
+  totalDiscountsUsd     Decimal @default(0) @map("total_discounts_usd") @db.Decimal(18, 4)
+  totalRefundsUsd       Decimal @default(0) @map("total_refunds_usd") @db.Decimal(18, 4)
+
+  // Raw ZIMRA request/response payloads (for audit & debugging)
+  openRequestPayload    Json? @map("open_request_payload")
+  openResponsePayload   Json? @map("open_response_payload")
+  closeRequestPayload   Json? @map("close_request_payload")
+  closeResponsePayload  Json? @map("close_response_payload")
+
+  // Relations
+  sales     Sale[]
+
+  @@unique([deviceId, fiscalDayNo])
+  @@unique([deviceId, fiscalDayDate])
+  @@index([tenantId, fiscalDayDate])
+  @@index([tenantId, status])
+  @@map("fiscal_days")
+}
+
+// =============================================================================
+// SALE (receipt / transaction header)
+// =============================================================================
+
+model Sale {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  deviceId String @map("device_id") @db.Uuid
+  device   Device @relation(fields: [deviceId], references: [id])
+
+  fiscalDayId String?    @map("fiscal_day_id") @db.Uuid
+  fiscalDay   FiscalDay? @relation(fields: [fiscalDayId], references: [id])
+
+  cashierId String? @map("cashier_id") @db.Uuid
+  cashier   User?   @relation("CashierSales", fields: [cashierId], references: [id])
+
+  // Receipt identity
+  receiptType         ReceiptType @default(FISCAL_INVOICE) @map("receipt_type")
+  status              SaleStatus  @default(DRAFT)
+  receiptNumber       String?     @unique @map("receipt_number") @db.VarChar(50)  // Tenant-formatted receipt no.
+  receiptCounter      Int?        @map("receipt_counter")         // ZIMRA sequential counter (per device)
+  receiptGlobalNo     Int?        @map("receipt_global_no")       // ZIMRA global receipt number
+  referenceReceiptId  String?     @map("reference_receipt_id") @db.Uuid  // For credit notes — points to original sale
+
+  // Customer (optional — for B2B / account sales)
+  customerName        String?  @map("customer_name") @db.VarChar(255)
+  customerVatNumber   String?  @map("customer_vat_number") @db.VarChar(50)
+  customerAddress     String?  @map("customer_address") @db.VarChar(500)
+  customerTinNumber   String?  @map("customer_tin_number") @db.VarChar(20)
+
+  // Monetary totals — always calculated in both currencies
+  subtotalUsd         Decimal  @map("subtotal_usd") @db.Decimal(18, 4)
+  discountUsd         Decimal  @default(0) @map("discount_usd") @db.Decimal(18, 4)
+  vatTotalUsd         Decimal  @map("vat_total_usd") @db.Decimal(18, 4)
+  grandTotalUsd       Decimal  @map("grand_total_usd") @db.Decimal(18, 4)
+  grandTotalZig       Decimal? @map("grand_total_zig") @db.Decimal(18, 4) // Converted at day's rate
+  exchangeRateUsed    Decimal? @map("exchange_rate_used") @db.Decimal(18, 6) // ZiG per USD
+
+  // Payments (split tender support — stored as JSONB array)
+  // Each entry: { method: PaymentMethod, amountUsd: Decimal, amountZig: Decimal }
+  payments            Json     @default("[]")
+  changeDueUsd        Decimal  @default(0) @map("change_due_usd") @db.Decimal(18, 4)
+  changeDueZig        Decimal  @default(0) @map("change_due_zig") @db.Decimal(18, 4)
+
+  // ZIMRA fiscal submission
+  fiscalSignature     String? @map("fiscal_signature") @db.VarChar(1024)  // Base64 ZIMRA signature
+  fiscalHash          String? @map("fiscal_hash") @db.VarChar(256)        // SHA256 of canonical receipt
+  zimraReceiptDate    DateTime? @map("zimra_receipt_date")
+  zimraQrCode         String? @map("zimra_qr_code") @db.Text              // URL or raw QR payload
+  zimraVerifyUrl      String? @map("zimra_verify_url") @db.VarChar(512)
+  zimraSubmittedAt    DateTime? @map("zimra_submitted_at")
+  zimraResponseCode   String? @map("zimra_response_code") @db.VarChar(20)
+  zimraErrorMessage   String? @map("zimra_error_message") @db.Text
+
+  // Raw ZIMRA payloads (for audit / re-submission)
+  submitRequestPayload  Json? @map("submit_request_payload")
+  submitResponsePayload Json? @map("submit_response_payload")
+
+  // Offline / sync tracking
+  createdOffline   Boolean  @default(false) @map("created_offline")
+  offlineSyncedAt  DateTime? @map("offline_synced_at")
+  localIdempotencyKey String? @unique @map("local_idempotency_key") @db.VarChar(100) // UUID generated on device pre-sale
+
+  // Notes
+  notes String? @db.Text
+
+  items     SaleItem[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([deviceId, receiptCounter])
+  @@index([fiscalDayId])
+  @@map("sales")
+}
+
+// =============================================================================
+// SALE ITEM (line item on a receipt)
+// =============================================================================
+
+model SaleItem {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  saleId String @map("sale_id") @db.Uuid
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  productId String?  @map("product_id") @db.Uuid
+  product   Product? @relation(fields: [productId], references: [id])
+
+  // Line item snapshot (captured at sale time — products can change later)
+  sku          String  @db.VarChar(100)
+  productName  String  @map("product_name") @db.VarChar(255)
+  hsCode       String? @map("hs_code") @db.VarChar(20)
+  taxCategory  TaxCategory @map("tax_category")
+
+  // Quantities & pricing (all stored in USD; ZiG equivalents computed from exchange rate)
+  quantity          Decimal @db.Decimal(18, 4)
+  unit              String  @default("each") @db.VarChar(50)
+  unitPriceUsd      Decimal @map("unit_price_usd") @db.Decimal(18, 6)   // Pre-tax unit price
+  discountUsd       Decimal @default(0) @map("discount_usd") @db.Decimal(18, 4)
+  discountPercent   Decimal @default(0) @map("discount_percent") @db.Decimal(5, 4)
+  vatRate           Decimal @map("vat_rate") @db.Decimal(5, 4)           // Rate at time of sale
+  vatAmountUsd      Decimal @map("vat_amount_usd") @db.Decimal(18, 4)
+  lineTotalUsd      Decimal @map("line_total_usd") @db.Decimal(18, 4)   // Inclusive of VAT, net of discount
+
+  // ZIMRA requires per-line tax breakdown
+  taxableAmountUsd  Decimal @map("taxable_amount_usd") @db.Decimal(18, 4) // Excl. VAT
+  taxAmountUsd      Decimal @map("tax_amount_usd") @db.Decimal(18, 4)
+
+  lineOrder Int @default(0) @map("line_order") // Display ordering on receipt
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+// =============================================================================
+// OFFLINE SYNC QUEUE
+// =============================================================================
+
+model OfflineSyncQueue {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  deviceId String @map("device_id") @db.Uuid
+  device   Device @relation(fields: [deviceId], references: [id])
+
+  // Queue identity
+  operationType     SyncOperationType @map("operation_type")
+  status            SyncQueueStatus   @default(PENDING)
+  priority          Int               @default(5)   // Lower = higher priority (1 = urgent)
+
+  // Reference to the entity being synced
+  entityType        String  @map("entity_type") @db.VarChar(50)   // "Sale" | "FiscalDay"
+  entityId          String  @map("entity_id") @db.Uuid
+  idempotencyKey    String  @unique @map("idempotency_key") @db.VarChar(100) // Prevents duplicate submission
+
+  // Serialised ZIMRA API request payload (ready to send)
+  requestPayload    Json    @map("request_payload")
+
+  // Last attempt details
+  attemptCount      Int       @default(0) @map("attempt_count")
+  maxAttempts       Int       @default(10) @map("max_attempts")
+  nextRetryAt       DateTime? @map("next_retry_at")
+  lastAttemptAt     DateTime? @map("last_attempt_at")
+  lastErrorCode     String?   @map("last_error_code") @db.VarChar(20)
+  lastErrorMessage  String?   @map("last_error_message") @db.Text
+
+  // ZIMRA response on success
+  responsePayload   Json?   @map("response_payload")
+  succeededAt       DateTime? @map("succeeded_at")
+
+  // Backoff config (exponential with jitter — stored per-item for flexibility)
+  backoffMultiplier Decimal @default(2.0) @map("backoff_multiplier") @db.Decimal(4, 2)
+  initialDelayMs    Int     @default(5000) @map("initial_delay_ms")
+  maxDelayMs        Int     @default(300000) @map("max_delay_ms")  // 5 minutes cap
+
+  @@index([tenantId, status, nextRetryAt])
+  @@index([deviceId, status])
+  @@index([entityId, operationType])
+  @@map("offline_sync_queue")
+}
+
+// =============================================================================
+// PHASE 3.5 ADDITIONS — Subscription & Billing
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// NEW ENUMS
+// ---------------------------------------------------------------------------
+
+enum SubscriptionStatus {
+  TRIAL         // Within trial period (trialEndsAt not yet passed)
+  ACTIVE        // Paid and current (> 10 days remaining)
+  WARNING       // Approaching expiry (<= 10 days, > 0 days remaining)
+  EXPIRED       // Past expiry — POS locked
+  CANCELLED     // Manually cancelled by operator or super-admin
+}
+
+enum PaymentProvider {
+  PAYNOW        // Paynow Zimbabwe gateway (aggregates EcoCash, Swipe, ZIPIT)
+  ECOCASH       // Direct EcoCash API integration
+  INNBUCKS      // InnBucks wallet
+  ZIPIT         // ZIPIT bank transfer
+  CASH_MANUAL   // Manual cash payment recorded by super-admin
+}
+
+enum PaymentTransactionStatus {
+  PENDING       // Created, awaiting provider confirmation
+  PROCESSING    // Payment gateway processing
+  PAID          // Confirmed and subscription extended
+  FAILED        // Provider declined or timeout
+  REFUNDED      // Payment reversed (subscription NOT extended)
+  DISPUTED      // Chargeback / disputed — under investigation
+}
+
+// ---------------------------------------------------------------------------
+// TENANT MODEL — SUBSCRIPTION FIELDS (append to existing Tenant model above)
+// Run: prisma migrate dev --name add_subscription_fields
+// ---------------------------------------------------------------------------
+// NOTE: These fields are appended via a migration. The @@map and relations
+// are already defined in the base Tenant model above.
+// Add the following fields inside the Tenant model before @@map("tenants"):
+//
+//   subscriptionStatus    SubscriptionStatus @default(TRIAL) @map("subscription_status")
+//   subscriptionExpiresAt DateTime?          @map("subscription_expires_at")
+//   licenseSecretKey      String             @map("license_secret_key") @db.VarChar(128)
+//   monthlyFeeUsd         Decimal            @default(40.00) @map("monthly_fee_usd") @db.Decimal(10, 2)
+//   lastPaymentAt         DateTime?          @map("last_payment_at")
+//   paymentTransactions   PaymentTransaction[]
+//
+// The migration SQL equivalent:
+//   ALTER TABLE tenants
+//     ADD COLUMN subscription_status TEXT NOT NULL DEFAULT 'TRIAL',
+//     ADD COLUMN subscription_expires_at TIMESTAMPTZ,
+//     ADD COLUMN license_secret_key VARCHAR(128) NOT NULL DEFAULT '',
+//     ADD COLUMN monthly_fee_usd NUMERIC(10,2) NOT NULL DEFAULT 40.00,
+//     ADD COLUMN last_payment_at TIMESTAMPTZ;
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// PAYMENT TRANSACTION
+// ---------------------------------------------------------------------------
+
+model PaymentTransaction {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Payment identity
+  reference       String  @unique @map("reference") @db.VarChar(100) // Provider-assigned reference
+  internalRef     String  @unique @map("internal_ref") @db.VarChar(100) // Our own idempotency UUID
+
+  // Amount
+  amountUsd       Decimal @map("amount_usd") @db.Decimal(10, 2)        // Always $40.00 (or multiples)
+  amountZig       Decimal? @map("amount_zig") @db.Decimal(18, 4)       // ZiG equivalent at time of payment
+  exchangeRateUsed Decimal? @map("exchange_rate_used") @db.Decimal(18, 6)
+  currency        String  @map("currency") @db.VarChar(10)              // "USD" | "ZIG"
+
+  // Provider
+  provider        PaymentProvider @map("provider")
+  providerStatus  String? @map("provider_status") @db.VarChar(50)      // Raw status string from provider
+  providerMeta    Json?   @map("provider_meta")                         // Full webhook payload for audit
+
+  // Subscription linkage
+  monthsPurchased Int     @default(1) @map("months_purchased")          // Usually 1; allows multi-month
+  status          PaymentTransactionStatus @default(PENDING) @map("status")
+
+  // Timing
+  initiatedAt     DateTime  @default(now()) @map("initiated_at")
+  paidAt          DateTime? @map("paid_at")
+  failedAt        DateTime? @map("failed_at")
+  expiryExtendedTo DateTime? @map("expiry_extended_to")                 // New subscriptionExpiresAt after payment
+
+  // Verification
+  webhookReceivedAt DateTime? @map("webhook_received_at")
+  webhookHash       String?   @map("webhook_hash") @db.VarChar(128)     // SHA-512 of raw webhook body for audit
+  verifiedByUserId  String?   @map("verified_by_user_id") @db.Uuid      // Set for CASH_MANUAL entries
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([reference])
+  @@map("payment_transactions")
+}
+
+// ---------------------------------------------------------------------------
+// OFFLINE LICENSE KEY LOG
+// Tracks every offline license key generated and whether it has been consumed.
+// Prevents replay attacks — each key can only extend the subscription once.
+// ---------------------------------------------------------------------------
+
+model OfflineLicenseKey {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenantId  String @map("tenant_id") @db.Uuid
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Key material
+  keyHash         String   @unique @map("key_hash") @db.VarChar(128)   // SHA-256 of the full key string
+  monthsPurchased Int      @map("months_purchased")
+  issuedForDate   DateTime @map("issued_for_date")                      // The base date embedded in the key
+  expiresAt       DateTime @map("expires_at")                           // Key is invalid if applied after this
+
+  // Consumption
+  isConsumed      Boolean  @default(false) @map("is_consumed")
+  consumedAt      DateTime? @map("consumed_at")
+  consumedByUserId String? @map("consumed_by_user_id") @db.Uuid
+
+  // Audit
+  issuedByUserId  String? @map("issued_by_user_id") @db.Uuid
+  notes           String? @db.Text
+
+  @@index([tenantId, isConsumed])
+  @@map("offline_license_keys")
+}
