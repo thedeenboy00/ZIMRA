@@ -1,0 +1,170 @@
+# =============================================================================
+# render.yaml — ZIMRA POS Platform · Render Blueprint
+# =============================================================================
+# Defines two services:
+#   1. zimra-pos-api      — Express/Fastify API (web service, public HTTPS)
+#   2. zimra-pos-worker   — Background sync worker (no public port)
+#
+# Deploy:
+#   1. Push this file to the root of your repo
+#   2. In Render Dashboard → New → Blueprint → connect your repo
+#   3. Fill in the "sync: false" env vars when prompted
+#   4. Click "Apply"
+#
+# Region: frankfurt — closest to Zimbabwe (lower latency than US regions)
+# =============================================================================
+
+services:
+
+  # ── 1. API Web Service ────────────────────────────────────────────────────
+  - type: web
+    name: zimra-pos-api
+    runtime: node
+    region: frankfurt
+    plan: free              # $7/mo — always-on, no sleep, 512MB RAM
+
+    rootDir: .
+    buildCommand: npm ci && npx prisma generate && npm run build
+    # preDeployCommand runs AFTER build, BEFORE traffic switches — safe for migrations
+    preDeployCommand: npx prisma migrate deploy
+    startCommand: node dist/server.js
+
+    healthCheckPath: /api/health
+
+    # Auto-deploy every push to main branch
+    autoDeploy: true
+    branch: main
+
+    # Graceful shutdown — allow in-flight ZIMRA requests to complete
+    maxShutdownDelaySeconds: 30
+
+    envVars:
+      # ── Database (Supabase) ──────────────────────────────────────────────
+      # Transaction pooler URL (port 6543) — used by Prisma Client at runtime
+      # Get from: Supabase Dashboard → Project → Connect → Transaction Pooler
+      - key: DATABASE_URL
+        sync: false            # You paste this in the Render Dashboard
+
+      # Direct connection URL (port 5432) — used by prisma migrate deploy ONLY
+      # Get from: Supabase Dashboard → Project → Connect → Direct Connection
+      - key: DIRECT_URL
+        sync: false
+
+      # ── App config ────────────────────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: "3001"
+
+      # ── ZIMRA FDMS ────────────────────────────────────────────────────────
+      - key: ZIMRA_ENVIRONMENT
+        value: production      # Change to "development" for sandbox testing
+
+      - key: ZIMRA_TIMEOUT_MS
+        value: "30000"
+
+      # ── Device key encryption (CRITICAL — generate with: openssl rand -hex 32) ──
+      - key: DEVICE_KEY_SECRET
+        sync: false
+
+      - key: DEVICE_KEY_SALT
+        sync: false
+
+      # ── Subscription / billing ────────────────────────────────────────────
+      - key: PAYNOW_INTEGRATION_ID
+        sync: false
+
+      - key: PAYNOW_INTEGRATION_KEY
+        sync: false
+
+      - key: ECOCASH_API_URL
+        value: https://api.econet.co.zw/apis/ecocash/v1/transactions
+
+      - key: ECOCASH_MERCHANT_CODE
+        sync: false
+
+      - key: ECOCASH_MERCHANT_PIN
+        sync: false
+
+      - key: ECOCASH_MERCHANT_NUMBER
+        sync: false
+
+      - key: ECOCASH_API_TOKEN
+        sync: false
+
+      - key: ECOCASH_WEBHOOK_SECRET
+        sync: false
+
+      - key: INNBUCKS_API_URL
+        value: https://api.innbucks.co.zw/v1/payments/initiate
+
+      - key: INNBUCKS_MERCHANT_ID
+        sync: false
+
+      - key: INNBUCKS_API_KEY
+        sync: false
+
+      - key: INNBUCKS_WEBHOOK_SECRET
+        sync: false
+
+      - key: ZIPIT_BENEFICIARY_ACCOUNT
+        sync: false
+
+      - key: ZIPIT_BENEFICIARY_BANK
+        sync: false
+
+      - key: ZIPIT_BENEFICIARY_NAME
+        sync: false
+
+      - key: ZIPIT_WEBHOOK_API_KEY
+        sync: false
+
+      # ── Auth / JWT ────────────────────────────────────────────────────────
+      - key: JWT_SECRET
+        generateValue: true    # Render auto-generates a secure random value
+
+      - key: JWT_EXPIRES_IN
+        value: "8h"            # POS session token lifetime
+
+      # ── App URLs ──────────────────────────────────────────────────────────
+      # Set this to your Vercel deployment URL after first deploy
+      - key: APP_BASE_URL
+        sync: false            # e.g., https://zimra-pos.vercel.app
+
+
+  # ── 2. Background Sync Worker ─────────────────────────────────────────────
+  # Runs the server-side sync queue processor — replays queued ZIMRA operations
+  # that failed or were queued while offline. No public HTTP port.
+  - type: worker
+    name: zimra-pos-worker
+    runtime: node
+    region: frankfurt
+    plan: free              # $7/mo
+
+    rootDir: .
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: node dist/worker.js
+
+    autoDeploy: true
+    branch: main
+
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: DEVICE_KEY_SECRET
+        sync: false
+      - key: DEVICE_KEY_SALT
+        sync: false
+      - key: ZIMRA_ENVIRONMENT
+        value: production
+      - key: ZIMRA_TIMEOUT_MS
+        value: "30000"
+      - key: WORKER_POLL_INTERVAL_MS
+        value: "10000"         # Poll sync queue every 10 seconds
+      - key: WORKER_MAX_CONCURRENT
+        value: "3"             # Process up to 3 ZIMRA submissions in parallel

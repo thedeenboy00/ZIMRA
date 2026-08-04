@@ -12,12 +12,12 @@
 
 generator client {
   provider        = "prisma-client-js"
+  output          = "../generated/prisma"
   previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider   = "postgresql"
-  url        = env("DATABASE_URL")
   extensions = [pgcrypto, uuid_ossp]
 }
 
@@ -150,15 +150,24 @@ model Tenant {
   planTier    String   @default("starter") @map("plan_tier") @db.VarChar(50)
   trialEndsAt DateTime? @map("trial_ends_at")
 
+  // Subscription billing (Phase 3.5)
+  subscriptionStatus    SubscriptionStatus @default(TRIAL) @map("subscription_status")
+  subscriptionExpiresAt DateTime?          @map("subscription_expires_at")
+  licenseSecretKey      String             @default("") @map("license_secret_key") @db.VarChar(128)
+  monthlyFeeUsd         Decimal            @default(40.00) @map("monthly_fee_usd") @db.Decimal(10, 2)
+  lastPaymentAt         DateTime?          @map("last_payment_at")
+
   // Relations
-  users          User[]
-  devices        Device[]
-  products       Product[]
-  hsCodes        HsCode[]
-  sales          Sale[]
-  currencyRates  CurrencyRate[]
-  fiscalDays     FiscalDay[]
-  syncQueue      OfflineSyncQueue[]
+  users               User[]
+  devices             Device[]
+  products            Product[]
+  hsCodes             HsCode[]
+  sales               Sale[]
+  currencyRates       CurrencyRate[]
+  fiscalDays          FiscalDay[]
+  syncQueue           OfflineSyncQueue[]
+  paymentTransactions PaymentTransaction[]
+  offlineLicenseKeys  OfflineLicenseKey[]
 
   @@map("tenants")
 }
@@ -607,30 +616,6 @@ enum PaymentTransactionStatus {
   REFUNDED      // Payment reversed (subscription NOT extended)
   DISPUTED      // Chargeback / disputed — under investigation
 }
-
-// ---------------------------------------------------------------------------
-// TENANT MODEL — SUBSCRIPTION FIELDS (append to existing Tenant model above)
-// Run: prisma migrate dev --name add_subscription_fields
-// ---------------------------------------------------------------------------
-// NOTE: These fields are appended via a migration. The @@map and relations
-// are already defined in the base Tenant model above.
-// Add the following fields inside the Tenant model before @@map("tenants"):
-//
-//   subscriptionStatus    SubscriptionStatus @default(TRIAL) @map("subscription_status")
-//   subscriptionExpiresAt DateTime?          @map("subscription_expires_at")
-//   licenseSecretKey      String             @map("license_secret_key") @db.VarChar(128)
-//   monthlyFeeUsd         Decimal            @default(40.00) @map("monthly_fee_usd") @db.Decimal(10, 2)
-//   lastPaymentAt         DateTime?          @map("last_payment_at")
-//   paymentTransactions   PaymentTransaction[]
-//
-// The migration SQL equivalent:
-//   ALTER TABLE tenants
-//     ADD COLUMN subscription_status TEXT NOT NULL DEFAULT 'TRIAL',
-//     ADD COLUMN subscription_expires_at TIMESTAMPTZ,
-//     ADD COLUMN license_secret_key VARCHAR(128) NOT NULL DEFAULT '',
-//     ADD COLUMN monthly_fee_usd NUMERIC(10,2) NOT NULL DEFAULT 40.00,
-//     ADD COLUMN last_payment_at TIMESTAMPTZ;
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // PAYMENT TRANSACTION

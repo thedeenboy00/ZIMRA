@@ -21,7 +21,7 @@
 // =============================================================================
 
 import type { Request, Response, NextFunction } from "express";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma";
 import { createHash, randomUUID } from "crypto";
 import {
   MONTHLY_FEE_USD,
