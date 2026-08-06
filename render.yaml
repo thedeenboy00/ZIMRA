@@ -22,7 +22,7 @@ services:
     rootDir: .
     # Migrations run inside startCommand before the server starts.
     # Free tier does not support preDeployCommand or maxShutdownDelaySeconds.
-    buildCommand: npm install && ./node_modules/.bin/prisma generate && ./node_modules/.bin/tsc --project tsconfig.api.json
+    buildCommand: npm install && chmod +x ./node_modules/.bin/* && ./node_modules/.bin/prisma generate && ./node_modules/.bin/tsc --project tsconfig.api.json
     startCommand: ./node_modules/.bin/prisma migrate deploy && node dist/server.js
 
     healthCheckPath: /api/health
