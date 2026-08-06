@@ -20,7 +20,7 @@ import {
   randomBytes,
 } from "crypto";
 
-import { PrismaClient, SubscriptionStatus } from "@prisma/client";
+import { PrismaClient, SubscriptionStatus } from "../../generated/prisma/index.js";
 
 // ---------------------------------------------------------------------------
 // §1. CONSTANTS
@@ -489,7 +489,7 @@ export class SubscriptionService {
     transactionId: string,
     months = 1
   ): Promise<{ newExpiresAt: Date; status: SubscriptionStatus }> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: any) => {
       const tenant = await tx.tenant.findUniqueOrThrow({
         where: { id: tenantId },
         select: {
@@ -577,7 +577,7 @@ export class SubscriptionService {
       .update(providedKey.trim(), "utf8")
       .digest("hex");
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: any) => {
       const existingKey = await (tx as any).offlineLicenseKey.findUnique({
         where: { keyHash },
         select: { isConsumed: true, consumedAt: true },
@@ -769,10 +769,8 @@ export function createSubscriptionGuard(prisma: PrismaClient) {
   const service = new SubscriptionService(prisma);
 
   return async function subscriptionGuard(
-    req: { user?: { tenantId?: string } },
-    res: {
-      status: (code: number) => { json: (body: object) => void };
-    },
+    req: any,
+    res: any,
     next: () => void
   ): Promise<void> {
     const tenantId = req.user?.tenantId;

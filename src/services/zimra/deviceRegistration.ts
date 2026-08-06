@@ -12,7 +12,7 @@
 //   7. Handle certificate renewal when approaching expiry
 // =============================================================================
 
-import { PrismaClient, DeviceStatus } from "@prisma/client";
+import { PrismaClient, DeviceStatus } from "../../../generated/prisma/index.js";
 
 import {
   generateDeviceKeyPair,

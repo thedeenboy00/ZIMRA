@@ -3,8 +3,10 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022", "DOM"],
-    "jsx": "react-jsx",
+    "lib": [
+      "ES2022"
+    ],
+    "types": ["node"],
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -24,8 +26,10 @@
     "dist",
     "src/app/**",
     "src/components/**",
-    "src/hooks/**",
-    "**/*.tsx",
-    "**/use*.ts"
+    "src/lib/storage.ts",
+    "src/services/sync/offlineDb.ts",
+    "src/services/sync/offlineSyncManager.ts",
+    "src/services/sync/useSyncManager.ts",
+    "src/services/sync/index.ts"
   ]
 }

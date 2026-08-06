@@ -416,17 +416,17 @@ export class OfflineSyncManager {
     const eligible = await db.syncQueue
       .where("status")
       .anyOf(["PENDING", "RETRYING"])
-      .and((entry) => entry.nextRetryAt <= now)
+      .and((entry: any) => entry.nextRetryAt <= now)
       .sortBy("priority");
 
     // Further sort within same priority by nextRetryAt
-    eligible.sort((a, b) => {
+    eligible.sort((a: any, b: any) => {
       if (a.priority !== b.priority) return a.priority - b.priority;
       return a.nextRetryAt - b.nextRetryAt;
     });
 
     const toProcess = eligible
-      .filter((e) => !this.inFlightIds.has(e.id))
+      .filter((e: any) => !this.inFlightIds.has(e.id))
       .slice(0, this.config.maxConcurrent - this.inFlightCount);
 
     if (toProcess.length === 0) return 0;
@@ -938,7 +938,7 @@ export class OfflineSyncManager {
     const byBarcode = await db.products
       .where("barcode")
       .equalsIgnoreCase(trimmed)
-      .and((p) => p.tenantId === this.config.tenantId && p.isActive)
+      .and((p: any) => p.tenantId === this.config.tenantId && p.isActive)
       .limit(1)
       .toArray();
 
@@ -948,7 +948,7 @@ export class OfflineSyncManager {
     const bySku = await db.products
       .where("sku")
       .startsWithIgnoreCase(trimmed)
-      .and((p) => p.tenantId === this.config.tenantId && p.isActive)
+      .and((p: any) => p.tenantId === this.config.tenantId && p.isActive)
       .limit(limit)
       .toArray();
 
@@ -956,7 +956,7 @@ export class OfflineSyncManager {
     const byName = await db.products
       .where("[tenantId+isActive]")
       .equals([this.config.tenantId, 1])
-      .filter((p) => p.name.toLowerCase().includes(trimmed))
+      .filter((p: any) => p.name.toLowerCase().includes(trimmed))
       .limit(limit)
       .toArray();
 

@@ -17,7 +17,7 @@ import {
   type Sale,
   type FiscalDay,
   type Device,
-} from "@prisma/client";
+} from "../../../generated/prisma/index.js";
 
 import { buildReceiptSignature, hashReceipt } from "./crypto.js";
 import {
@@ -356,7 +356,7 @@ export class FiscalDayService {
     );
 
     // ── Build ZIMRA receipt lines ──────────────────────────────────────────
-    const receiptLines: ZimraReceiptLine[] = sale.items.map((item, index) => ({
+    const receiptLines: ZimraReceiptLine[] = sale.items.map((item: any, index: number) => ({
       receiptLineNo: index + 1,
       receiptLineName: item.productName.slice(0, 100),
       receiptLineQuantity: Number(item.quantity),
@@ -369,7 +369,7 @@ export class FiscalDayService {
 
     // ── Build ZIMRA receipt taxes (aggregated by category) ─────────────────
     const receiptTaxes: ZimraReceiptTax[] = aggregateTaxesByCategory(
-      sale.items.map((item) => ({
+      sale.items.map((item: any) => ({
         taxCategory: item.taxCategory as ZimraTaxCategory,
         lineTotalUsd: Number(item.lineTotalUsd),
         vatAmountUsd: Number(item.vatAmountUsd),

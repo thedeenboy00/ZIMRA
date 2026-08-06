@@ -1,6 +1,6 @@
 // =============================================================================
 // React Hooks — Offline Sync Manager
-// src/services/sync/useSyncManager.ts
+// src/services/sync/useSyncManager.tsx
 // =============================================================================
 
 "use client";
@@ -12,6 +12,7 @@ import {
   useCallback,
   createContext,
   useContext,
+  createElement,
   type ReactNode,
 } from "react";
 
@@ -130,10 +131,10 @@ export function SyncManagerProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on client mount
 
-  return (
-    <SyncManagerContext.Provider value={{ manager: managerRef.current, status }}>
-      {children}
-    </SyncManagerContext.Provider>
+  return createElement(
+    SyncManagerContext.Provider,
+    { value: { manager: managerRef.current, status } },
+    children
   );
 }
 

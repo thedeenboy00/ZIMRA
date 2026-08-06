@@ -27,7 +27,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import { createHash, createHmac, timingSafeEqual } from "crypto";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../../generated/prisma/index.js";
 import { SubscriptionService } from "../../services/subscription.js";
 
 // ---------------------------------------------------------------------------

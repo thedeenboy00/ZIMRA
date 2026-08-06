@@ -15,7 +15,7 @@
 // Final amounts are always rounded to 2 decimal places for display/ZIMRA.
 // =============================================================================
 
-import { PrismaClient, type CurrencyRate } from "@prisma/client";
+import { PrismaClient, type CurrencyRate } from "../../../generated/prisma/index.js";
 import type { ZimraTaxCategory, ZimraCurrencyCode } from "../../types/zimra.js";
 
 // ---------------------------------------------------------------------------
@@ -328,7 +328,7 @@ export class CurrencyRateService {
       select: { rateDate: true, rate: true, rateSource: true },
     });
 
-    return records.map((r) => ({
+    return records.map((r: { rateDate: Date; rate: unknown; rateSource: string }) => ({
       date: toDateString(r.rateDate),
       rate: Number(r.rate),
       source: r.rateSource,

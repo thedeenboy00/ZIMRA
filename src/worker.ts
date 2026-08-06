@@ -14,7 +14,7 @@
 // =============================================================================
 
 import prisma from "./lib/db.js";
-import { SyncOperationType, SyncQueueStatus } from "../../generated/prisma/index.js";
+import { SyncOperationType, SyncQueueStatus } from "../generated/prisma/index.js";
 import { FiscalDayService } from "./services/zimra/fiscalDay.js";
 import { DeviceRegistrationService } from "./services/zimra/deviceRegistration.js";
 import { createZimraClient, isZimraSuccess } from "./services/zimra/client.js";

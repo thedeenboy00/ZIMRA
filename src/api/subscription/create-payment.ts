@@ -21,7 +21,7 @@
 // =============================================================================
 
 import type { Request, Response, NextFunction } from "express";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../../generated/prisma/index.js";
 import { createHash, randomUUID } from "crypto";
 import {
   MONTHLY_FEE_USD,
@@ -734,4 +734,4 @@ export class PaymentProviderError extends Error {
     super(message);
     this.name = "PaymentProviderError";
   }
-}a
+}

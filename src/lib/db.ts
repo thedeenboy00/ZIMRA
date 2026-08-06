@@ -9,22 +9,25 @@
 //               for multiple simultaneous POS terminals.
 // =============================================================================
 
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/index.js";
 
 // Prevent multiple PrismaClient instances in development (Next.js hot reload)
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const nodeEnv = (globalThis as any).process?.env?.NODE_ENV;
 
 export const prisma =
   globalForPrisma.prisma ??
-  new PrismaClient({
-    datasourceUrl: process.env.DATABASE_URL,
-    log:
-      process.env.NODE_ENV === "development"
-        ? ["query", "error", "warn"]
-        : ["error"],
-  });
+  (() => {
+    const prismaOptions: any = {
+      log:
+        nodeEnv === "development"
+          ? ["query", "error", "warn"]
+          : ["error"],
+    };
+    return new PrismaClient(prismaOptions);
+  })();
 
-if (process.env.NODE_ENV !== "production") {
+if (nodeEnv !== "production") {
   globalForPrisma.prisma = prisma;
 }
 
