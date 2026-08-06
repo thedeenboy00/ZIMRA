@@ -8,14 +8,14 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "npx tsc --project tsconfig.api.json",
+    "build": "./node_modules/.bin/tsc --project tsconfig.api.json",
     "start": "node dist/server.js",
-    "dev": "npx tsx watch src/server.ts",
-    "db:generate": "npx prisma generate",
-    "db:migrate": "npx prisma migrate deploy",
-    "db:studio": "npx prisma studio",
+    "dev": "./node_modules/.bin/tsx watch src/server.ts",
+    "db:generate": "./node_modules/.bin/prisma generate",
+    "db:migrate": "./node_modules/.bin/prisma migrate deploy",
+    "db:studio": "./node_modules/.bin/prisma studio",
     "db:reset": "prisma migrate reset --force",
-    "typecheck": "npx tsc --noEmit --project tsconfig.api.json",
+    "typecheck": "./node_modules/.bin/tsc --noEmit --project tsconfig.api.json",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
