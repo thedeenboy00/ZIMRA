@@ -1,64 +1,59 @@
 # =============================================================================
-# render.yaml — ZIMRA POS Platform · Render Blueprint (Free Tier Compatible)
+# render.yaml — ZIMRA POS Platform · Render Blueprint (Free Tier)
+# =============================================================================
+# Single web service — the sync worker runs in-process inside the API.
+# Free plan: 512MB RAM, shared CPU, spins down after 15 min inactivity.
+#
+# To deploy:
+#   1. Push this file to your repo root
+#   2. Render Dashboard → New → Blueprint → select your repo
+#   3. Fill in every "sync: false" variable when prompted
+#   4. Click Apply
 # =============================================================================
 
 services:
 
-  # ── 1. API & Sync Worker Web Service ──────────────────────────────────────
   - type: web
     name: zimra-pos-api
     runtime: node
     region: frankfurt
-    plan: free              
+    plan: free                 # $0/mo — spins down after 15 min inactivity
 
     rootDir: .
-    # Runs migrations and builds code in a single build step
-    buildCommand: npx prisma migrate deploy && npm run build
-    startCommand: node dist/server.js
+    # Migrations run inside startCommand before the server starts.
+    # Free tier does not support preDeployCommand or maxShutdownDelaySeconds.
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && node dist/server.js
 
     healthCheckPath: /api/health
-
-    # Auto-deploy every push to main branch
     autoDeploy: true
     branch: main
 
     envVars:
-      # ── Database (Supabase) ──────────────────────────────────────────────
       - key: DATABASE_URL
         sync: false
 
       - key: DIRECT_URL
         sync: false
 
-      # ── App config ────────────────────────────────────────────────────────
       - key: NODE_ENV
         value: production
 
       - key: PORT
-        value: "3003"
+        value: "3001"
 
-      # ── ZIMRA FDMS ────────────────────────────────────────────────────────
       - key: ZIMRA_ENVIRONMENT
-        value: development      # Set to "development" for sandbox testing
+        value: production
 
       - key: ZIMRA_TIMEOUT_MS
         value: "30000"
 
-      # ── Background Worker Tuning (In-Process) ────────────────────────────
-      - key: WORKER_POLL_INTERVAL_MS
-        value: "10000"         # Poll sync queue every 10 seconds
-
-      - key: WORKER_MAX_CONCURRENT
-        value: "3"             # Process up to 3 ZIMRA submissions in parallel
-
-      # ── Device key encryption (generate with: openssl rand -hex 32) ──────
       - key: DEVICE_KEY_SECRET
         sync: false
 
       - key: DEVICE_KEY_SALT
         sync: false
 
-      # ── Subscription / billing ────────────────────────────────────────────
       - key: PAYNOW_INTEGRATION_ID
         sync: false
 
@@ -107,13 +102,18 @@ services:
       - key: ZIPIT_WEBHOOK_API_KEY
         sync: false
 
-      # ── Auth / JWT ────────────────────────────────────────────────────────
       - key: JWT_SECRET
         generateValue: true
 
       - key: JWT_EXPIRES_IN
         value: "8h"
 
-      # ── App URLs ──────────────────────────────────────────────────────────
       - key: APP_BASE_URL
         sync: false
+
+      # Worker config — tuned for free-tier memory limits
+      - key: WORKER_POLL_INTERVAL_MS
+        value: "15000"         # 15 s — slightly gentler than $7 plan
+
+      - key: WORKER_MAX_CONCURRENT
+        value: "2"             # 2 concurrent ZIMRA ops — safe for 512 MB RAM

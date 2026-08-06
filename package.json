@@ -1,21 +1,21 @@
 {
   "name": "zimra-pos-api",
   "version": "1.0.0",
-  "description": "ZIMRA FDMS-compliant POS/ERP API — Render free tier",
+  "description": "ZIMRA FDMS-compliant POS/ERP API \u2014 Render free tier",
   "type": "module",
   "main": "dist/server.js",
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.api.json",
+    "build": "npx tsc --project tsconfig.api.json",
     "start": "node dist/server.js",
-    "dev": "tsx watch src/server.ts",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy",
-    "db:studio": "prisma studio",
+    "dev": "npx tsx watch src/server.ts",
+    "db:generate": "npx prisma generate",
+    "db:migrate": "npx prisma migrate deploy",
+    "db:studio": "npx prisma studio",
     "db:reset": "prisma migrate reset --force",
-    "typecheck": "tsc --noEmit --project tsconfig.api.json",
+    "typecheck": "npx tsc --noEmit --project tsconfig.api.json",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
