@@ -71,3 +71,5 @@ Thumbs.db
 .eslintcache
 .parcel-cache/
 .tmp/
+.vercel
+.env*
