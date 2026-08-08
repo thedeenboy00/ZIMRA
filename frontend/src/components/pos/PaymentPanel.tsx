@@ -14,8 +14,8 @@ import {
   normalisePayments,
   usdToZig,
   zigToUsd,
-} from "../../services/currency/currencyEngine.js";
-import type { PaymentLine } from "../../services/currency/currencyEngine.js";
+} from "../../services/currency/currencyEngine";
+import type { PaymentLine } from "../../services/currency/currencyEngine";
 
 // ---------------------------------------------------------------------------
 // §1. TENDER METHOD DEFINITIONS

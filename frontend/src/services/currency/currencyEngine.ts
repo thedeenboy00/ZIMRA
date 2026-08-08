@@ -15,8 +15,8 @@
 // Final amounts are always rounded to 2 decimal places for display/ZIMRA.
 // =============================================================================
 
-import { PrismaClient, type CurrencyRate } from "../../../generated/prisma/index.js";
-import type { ZimraTaxCategory, ZimraCurrencyCode } from "../../types/zimra.js";
+import { PrismaClient, type CurrencyRate } from "../../../generated/prisma/index";
+import type { ZimraTaxCategory, ZimraCurrencyCode } from "../../types/zimra";
 
 // ---------------------------------------------------------------------------
 // §1. CONSTANTS

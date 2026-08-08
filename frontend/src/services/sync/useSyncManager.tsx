@@ -1,6 +1,13 @@
 // =============================================================================
 // React Hooks — Offline Sync Manager
-// src/services/sync/useSyncManager.tsx
+// src/services/sync/useSyncManager.ts
+// =============================================================================
+// Provides React-friendly hooks that wrap OfflineSyncManager for use in
+// the Next.js POS UI (Phase 4). Three hooks:
+//
+//   useSyncManager()     — Access the singleton manager instance
+//   useSyncStatus()      — Live queue depth, online state, last sync time
+//   useConnectivity()    — Simple boolean online/offline indicator
 // =============================================================================
 
 "use client";
@@ -12,7 +19,6 @@ import {
   useCallback,
   createContext,
   useContext,
-  createElement,
   type ReactNode,
 } from "react";
 
@@ -20,7 +26,7 @@ import {
   OfflineSyncManager,
   type SyncEvent,
   type SyncManagerConfig,
-} from "./offlineSyncManager.js";
+} from "./offlineSyncManager";
 
 // ---------------------------------------------------------------------------
 // §1. SYNC STATUS STATE
@@ -37,7 +43,7 @@ export interface SyncStatus {
 }
 
 const DEFAULT_STATUS: SyncStatus = {
-  isOnline: true, // Safe default for SSR hydration match
+  isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
   pendingCount: 0,
   failedCount: 0,
   inFlightCount: 0,
@@ -69,6 +75,18 @@ interface SyncManagerProviderProps {
   children: ReactNode;
 }
 
+/**
+ * Wraps the application (or POS layout) to provide the sync manager
+ * singleton and live status to all child components.
+ *
+ * Place this in the Next.js root layout or POS shell component:
+ *
+ * ```tsx
+ * <SyncManagerProvider config={syncConfig}>
+ *   <PosLayout />
+ * </SyncManagerProvider>
+ * ```
+ */
 export function SyncManagerProvider({
   config,
   children,
@@ -77,16 +95,11 @@ export function SyncManagerProvider({
   const [status, setStatus] = useState<SyncStatus>(DEFAULT_STATUS);
 
   useEffect(() => {
-    // Initialise manager singleton (client-side only)
+    // Initialise manager singleton
     if (!managerRef.current) {
       managerRef.current = new OfflineSyncManager(config);
     }
     const manager = managerRef.current;
-
-    // Correct client navigator state after mounting (prevents SSR mismatch)
-    if (typeof window !== "undefined") {
-      setStatus((prev) => ({ ...prev, isOnline: navigator.onLine }));
-    }
 
     // Subscribe to sync events and update React state
     const unsubscribe = manager.on((event: SyncEvent) => {
@@ -129,19 +142,25 @@ export function SyncManagerProvider({
       manager.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on client mount
+  }, []); // Run once on mount
 
-  return createElement(
-    SyncManagerContext.Provider,
-    { value: { manager: managerRef.current, status } },
-    children
+  return (
+    <SyncManagerContext.Provider value={{ manager: managerRef.current, status }}>
+      {children}
+    </SyncManagerContext.Provider>
   );
 }
 
 // ---------------------------------------------------------------------------
-// §4. HOOKS
+// §4. useSyncManager — access to the manager instance
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns the `OfflineSyncManager` singleton.
+ * Use for imperative calls: `manager.storeSignedReceipt(...)`.
+ *
+ * @throws Error if called outside of `<SyncManagerProvider>`.
+ */
 export function useSyncManager(): OfflineSyncManager {
   const { manager } = useContext(SyncManagerContext);
   if (!manager) {
@@ -152,21 +171,55 @@ export function useSyncManager(): OfflineSyncManager {
   return manager;
 }
 
+// ---------------------------------------------------------------------------
+// §5. useSyncStatus — live queue state
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the live sync status, updated reactively on every sync event.
+ *
+ * ```tsx
+ * const { isOnline, pendingCount, failedCount } = useSyncStatus();
+ * ```
+ */
 export function useSyncStatus(): SyncStatus {
   return useContext(SyncManagerContext).status;
 }
 
+// ---------------------------------------------------------------------------
+// §6. useConnectivity — simple boolean
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns `true` when the device is online and the backend is reachable.
+ * Useful for disabling/enabling UI elements based on connectivity.
+ *
+ * ```tsx
+ * const isOnline = useConnectivity();
+ * return <Button disabled={!isOnline}>Sync Now</Button>
+ * ```
+ */
 export function useConnectivity(): boolean {
   return useContext(SyncManagerContext).status.isOnline;
 }
 
+// ---------------------------------------------------------------------------
+// §7. useFailedSyncEntries — failed queue items for admin screen
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns failed sync queue entries and a retry handler.
+ *
+ * ```tsx
+ * const { entries, retry } = useFailedSyncEntries();
+ * ```
+ */
 export function useFailedSyncEntries(): {
   entries: import("./offlineDb.js").LocalSyncQueueEntry[];
   retry: (id: string) => Promise<void>;
   isLoading: boolean;
 } {
   const manager = useSyncManager();
-  const status = useSyncStatus(); // Listen to live queue state changes
   const [entries, setEntries] = useState<
     import("./offlineDb.js").LocalSyncQueueEntry[]
   >([]);
@@ -182,10 +235,9 @@ export function useFailedSyncEntries(): {
     }
   }, [manager]);
 
-  // Re-fetch failed entries when failedCount changes in status
   useEffect(() => {
     load();
-  }, [load, status.failedCount]);
+  }, [load]);
 
   const retry = useCallback(
     async (id: string) => {
@@ -198,6 +250,17 @@ export function useFailedSyncEntries(): {
   return { entries, retry, isLoading };
 }
 
+// ---------------------------------------------------------------------------
+// §8. useLocalRate — offline-first exchange rate
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns today's locally-cached ZiG/USD exchange rate.
+ *
+ * ```tsx
+ * const { rate, isLoading, error } = useLocalRate();
+ * ```
+ */
 export function useLocalRate(): {
   rate: number | null;
   isLoading: boolean;
@@ -235,6 +298,18 @@ export function useLocalRate(): {
   return { rate, isLoading, error };
 }
 
+// ---------------------------------------------------------------------------
+// §9. useProductSearch — offline product search hook
+// ---------------------------------------------------------------------------
+
+/**
+ * Debounced offline product search hook.
+ * Returns products from IndexedDB matching the query string.
+ *
+ * ```tsx
+ * const { results, isSearching } = useProductSearch(searchTerm);
+ * ```
+ */
 export function useProductSearch(
   query: string,
   limit = 20
@@ -268,7 +343,7 @@ export function useProductSearch(
       } finally {
         setIsSearching(false);
       }
-    }, 200);
+    }, 200); // 200ms debounce
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -279,9 +354,13 @@ export function useProductSearch(
 }
 
 // ---------------------------------------------------------------------------
-// §5. PRIVATE HELPERS
+// §10. PRIVATE HELPERS
 // ---------------------------------------------------------------------------
 
+/**
+ * Pure function that applies a sync event to the current status state.
+ * Keeps the reducer logic testable and separate from React.
+ */
 function applyEventToStatus(prev: SyncStatus, event: SyncEvent): SyncStatus {
   switch (event.type) {
     case "online":

@@ -12,9 +12,9 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ThermalReceipt } from "./ThermalReceipt.js";
-import type { LocalSale } from "../../services/sync/offlineDb.js";
-import type { ReceiptTotals, NormalisedPayments } from "../../services/currency/currencyEngine.js";
+import { ThermalReceipt } from "./ThermalReceipt";
+import type { LocalSale } from "../../services/sync/offlineDb";
+import type { ReceiptTotals, NormalisedPayments } from "../../services/currency/currencyEngine";
 
 interface ReceiptModalProps {
   sale: LocalSale;

@@ -6,8 +6,8 @@
 // =============================================================================
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useProductSearch } from "../../services/sync/useSyncManager.js";
-import type { LocalProduct } from "../../services/sync/offlineDb.js";
+import { useProductSearch } from "../../services/sync/useSyncManager";
+import type { LocalProduct } from "../../services/sync/offlineDb";
 
 interface ProductSearchProps {
   onAddProduct: (product: LocalProduct) => void;

@@ -14,27 +14,28 @@
 // =============================================================================
 
 import { useState, useCallback, useReducer, useRef, useEffect } from "react";
-import { randomUUID } from "crypto";
+// Use browser-native crypto — available in all modern browsers and Next.js
+const randomUUID = () => crypto.randomUUID();
 
-import { CheckoutCart } from "../../components/pos/CheckoutCart.js";
-import { ProductSearch } from "../../components/pos/ProductSearch.js";
-import { PaymentPanel } from "../../components/pos/PaymentPanel.js";
-import { ReceiptModal } from "../../components/receipt/ReceiptModal.js";
-import { SubscriptionBanner } from "../../components/subscription/SubscriptionBanner.js";
-import { SyncStatusBar } from "../../components/pos/SyncStatusBar.js";
+import { CheckoutCart } from "../../components/pos/CheckoutCart";
+import { ProductSearch } from "../../components/pos/ProductSearch";
+import { PaymentPanel } from "../../components/pos/PaymentPanel";
+import { ReceiptModal } from "../../components/receipt/ReceiptModal";
+import { SubscriptionBanner } from "../../components/subscription/SubscriptionBanner";
+import { SyncStatusBar } from "../../components/pos/SyncStatusBar";
 
 import {
   useSyncManager,
   useSyncStatus,
   useLocalRate,
   useConnectivity,
-} from "../../services/sync/useSyncManager.js";
+} from "../../services/sync/useSyncManager";
 
 import {
   buildReceiptTotals,
   normalisePayments,
   priceLineItem,
-} from "../../services/currency/currencyEngine.js";
+} from "../../services/currency/currencyEngine";
 
 import {
   serialiseSaleItems,
@@ -42,14 +43,14 @@ import {
   type LocalProduct,
   type LocalSale,
   type LocalSaleItem,
-} from "../../services/sync/offlineDb.js";
+} from "../../services/sync/offlineDb";
 
 import type {
   LineItemInput,
   PaymentLine,
   ReceiptTotals,
   NormalisedPayments,
-} from "../../services/currency/currencyEngine.js";
+} from "../../services/currency/currencyEngine";
 
 // ---------------------------------------------------------------------------
 // §1. CART STATE TYPES & REDUCER

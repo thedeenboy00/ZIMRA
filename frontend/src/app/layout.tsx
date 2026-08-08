@@ -5,7 +5,7 @@
 
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
-import { SyncManagerProvider } from "../services/sync/useSyncManager.js";
+import { SyncManagerProvider } from "../services/sync/useSyncManager";
 
 const inter = Inter({
   subsets: ["latin"],

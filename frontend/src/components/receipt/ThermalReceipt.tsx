@@ -15,10 +15,10 @@
 
 import { useRef, useCallback } from "react";
 import { QRCodeCanvas } from "qrcode.react";
-import type { LocalSale } from "../../services/sync/offlineDb.js";
-import type { ReceiptTotals } from "../../services/currency/currencyEngine.js";
-import type { NormalisedPayments } from "../../services/currency/currencyEngine.js";
-import { parseSaleItems, parsePayments } from "../../services/sync/offlineDb.js";
+import type { LocalSale } from "../../services/sync/offlineDb";
+import type { ReceiptTotals } from "../../services/currency/currencyEngine";
+import type { NormalisedPayments } from "../../services/currency/currencyEngine";
+import { parseSaleItems, parsePayments } from "../../services/sync/offlineDb";
 
 // ---------------------------------------------------------------------------
 // §1. PAYMENT METHOD DISPLAY LABELS

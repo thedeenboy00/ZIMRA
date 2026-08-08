@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { useState, useEffect } from "react";
-import type { SubscriptionState } from "../../services/subscription.js";
+import type { SubscriptionState } from "../../services/subscription";
 
 export function SubscriptionBanner() {
   const [state, setState] = useState<SubscriptionState | null>(null);

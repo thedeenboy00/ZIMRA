@@ -22,7 +22,7 @@ import {
   type LocalFiscalDay,
   type LocalSyncQueueEntry,
   type LocalSignedReceipt,
-} from "./offlineDb.js";
+} from "./offlineDb";
 
 import type {
   ZimraSubmitReceiptRequest,
@@ -31,7 +31,7 @@ import type {
   ZimraOpenDayResponse,
   ZimraSubmitReceiptResponse,
   ZimraCloseDayResponse,
-} from "../../types/zimra.js";
+} from "../../types/zimra";
 
 // ---------------------------------------------------------------------------
 // §1. CONFIGURATION

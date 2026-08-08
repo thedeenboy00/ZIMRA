@@ -6,8 +6,8 @@
 // =============================================================================
 
 import { useState, useCallback } from "react";
-import type { CartItem } from "../../app/pos/page.js";
-import type { ReceiptTotals } from "../../services/currency/currencyEngine.js";
+import type { CartItem } from "../../app/pos/page";
+import type { ReceiptTotals } from "../../services/currency/currencyEngine";
 
 interface CheckoutCartProps {
   items: CartItem[];

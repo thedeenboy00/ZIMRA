@@ -24,7 +24,7 @@ import type {
   ZimraOpenDayRequest,
   ZimraCloseDayRequest,
   ZimraTaxCategory,
-} from "../../types/zimra.js";
+} from "../../types/zimra";
 
 // ---------------------------------------------------------------------------
 // §1. LOCAL ENTITY TYPES
