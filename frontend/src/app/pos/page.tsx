@@ -284,7 +284,6 @@ export default function PosCheckoutPage() {
           itemsJson: serialiseSaleItems(saleItems),
           needsServerSync: true,
           needsZimraSync: true,
-          localIdempotencyKey: saleId,
         };
 
         // Persist locally and enqueue for ZIMRA sync
